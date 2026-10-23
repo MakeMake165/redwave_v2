@@ -1,0 +1,37 @@
+(() => {
+const $=id=>document.getElementById(id), audio=$("audio");
+const read=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}};
+const s={tracks:[],current:null,queue:[],favorites:new Set(read("rw-favorites",[])),playlists:read("rw-playlists",[{id:"p0",name:"Любимые вайбы",tracks:[]}]),view:"home",client:localStorage.getItem("rw-jamendo-client-id")||"709fa152"};
+const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const toast=m=>{let e=$("toast");e.textContent=m;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),2200)};
+const save=()=>{localStorage.setItem("rw-favorites",JSON.stringify([...s.favorites]));localStorage.setItem("rw-playlists",JSON.stringify(s.playlists))};
+const cover=t=>t.artworkUrl100||"";
+const norm=t=>({id:String(t.id),title:t.name||"Без названия",artist:t.artist_name||"Неизвестный исполнитель",artworkUrl100:t.album_image||t.image||"",previewUrl:t.audio||"",genre:(t.musicinfo?.tags?.genres||[]).join(", ")||"Creative Commons",duration:Number(t.duration)||0});
+async function search(term="electronic"){
+$("status").textContent="Ищем полные треки Jamendo…";$("trackList").innerHTML="";
+try{const p=new URLSearchParams({client_id:s.client,format:"json",limit:"24",search:term,audioformat:"mp32",include:"musicinfo",imagesize:"300"});
+const r=await fetch("https://api.jamendo.com/v3.0/tracks/?"+p);if(!r.ok)throw Error();const d=await r.json();if(d.headers?.status==="failed")throw Error();
+s.tracks=(d.results||[]).map(norm).filter(t=>t.previewUrl);$("status").textContent=s.tracks.length?`Найдено ${s.tracks.length} полных треков · Jamendo`:"Треки не найдены. Попробуй другой запрос.";render();
+}catch{$("status").textContent="Не удалось загрузить каталог. Проверь интернет или Jamendo Client ID.";toast("Ошибка музыкального API")}}
+function visible(){if(s.view==="favorites")return s.tracks.filter(t=>s.favorites.has(t.id));if(s.view==="queue")return s.queue;if(s.view==="playlists")return s.tracks.filter(t=>s.playlists.some(p=>p.tracks.includes(t.id)));return s.tracks}
+function render(){let ts=visible();$("trackList").innerHTML=ts.length?ts.map(t=>`<article class="track-row"><img class="track-cover" src="${esc(cover(t))}" alt=""><div class="track-info"><strong>${esc(t.title)}</strong><span>${esc(t.artist)} · ${esc(t.genre)}</span></div><div class="track-actions"><button class="small-icon" data-play="${esc(t.id)}">▶</button><button class="small-icon" data-fav="${esc(t.id)}">${s.favorites.has(t.id)?"♥":"♡"}</button><button class="small-icon" data-queue="${esc(t.id)}">☷</button><button class="small-icon" data-add="${esc(t.id)}">＋</button></div></article>`).join(""):`<div class="status">Пока пусто. Найди музыку или добавь треки.</div>`}
+function player(){let t=s.current;if(!t)return;$("playerTitle").textContent=t.title;$("playerArtist").textContent=t.artist;$("playerArt").src=cover(t);$("playerFavorite").textContent=s.favorites.has(t.id)?"♥":"♡";$("playPause").textContent=audio.paused?"▶":"Ⅱ"}
+function play(t){if(!t?.previewUrl)return toast("Поток недоступен");s.current=t;if(!s.queue.some(x=>x.id===t.id))s.queue.push(t);audio.src=t.previewUrl;audio.play().then(player).catch(()=>toast("Нажми ▶ ещё раз"));player()}
+function next(){if(!s.queue.length)return toast("Очередь пуста");let i=s.queue.findIndex(t=>t.id===s.current?.id);play(s.queue[(i+1)%s.queue.length])}
+function playlists(){ $("playlistGrid").innerHTML=s.playlists.map(p=>`<div class="playlist-card" data-pl="${esc(p.id)}"><div class="playlist-icon">♫</div><strong>${esc(p.name)}</strong><span>${p.tracks.length} треков</span></div>`).join("")}
+$("trackList").addEventListener("click",e=>{let b=e.target.closest("button");if(!b)return;let t=[...s.tracks,...s.queue].find(x=>x.id===(b.dataset.play||b.dataset.fav||b.dataset.queue||b.dataset.add));if(!t)return;
+if(b.dataset.play)play(t);if(b.dataset.fav){s.favorites.has(t.id)?s.favorites.delete(t.id):s.favorites.add(t.id);save();render();player()}
+if(b.dataset.queue){if(!s.queue.some(x=>x.id===t.id))s.queue.push(t);toast("Добавлено в очередь");render()}
+if(b.dataset.add){let opts=s.playlists.map((p,i)=>`${i+1}. ${p.name}`).join("\n"),a=prompt("Номер плейлиста:\n"+opts+"\n0 — создать новый");if(a===null)return;let i=Number(a)-1;if(Number(a)===0){let n=prompt("Название плейлиста");if(!n?.trim())return;s.playlists.push({id:"p"+Date.now(),name:n.trim(),tracks:[]});i=s.playlists.length-1}let p=s.playlists[i];if(!p)return toast("Неверный номер");if(!p.tracks.includes(t.id))p.tracks.push(t.id);save();playlists();toast("Трек добавлен")}}); 
+document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>{s.view=b.dataset.view;document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x===b));$("searchRow").classList.toggle("hidden",s.view!=="search");$("viewTitle").textContent=({home:"Полные треки для тебя",search:"Поиск музыки",favorites:"Избранное",playlists:"Треки в плейлистах",queue:"Очередь воспроизведения"})[s.view]||"Музыка";$("sidebar").classList.remove("open");render()}));
+$("menuToggle").addEventListener("click",()=>$("sidebar").classList.toggle("open"));$("discoverBtn").addEventListener("click",()=>$("genreSection").scrollIntoView({behavior:"smooth"}));
+$("seeAllBtn").addEventListener("click",()=>search("popular electronic"));$("searchBtn").addEventListener("click",()=>search($("searchInput").value.trim()||"electronic"));$("searchInput").addEventListener("keydown",e=>{if(e.key==="Enter")search($("searchInput").value.trim()||"electronic")});
+document.querySelectorAll("[data-genre]").forEach(b=>b.addEventListener("click",()=>search(b.dataset.genre)));
+$("newPlaylistBtn").addEventListener("click",()=>{let n=prompt("Название плейлиста");if(n?.trim()){s.playlists.push({id:"p"+Date.now(),name:n.trim(),tracks:[]});save();playlists()}});
+$("playlistGrid").addEventListener("click",e=>{let el=e.target.closest("[data-pl]");if(!el)return;let p=s.playlists.find(x=>x.id===el.dataset.pl),ts=s.tracks.filter(t=>p.tracks.includes(t.id));if(!ts.length)return toast("Плейлист пуст");s.queue=ts;play(ts[0])});
+$("playerFavorite").addEventListener("click",()=>{if(!s.current)return;s.favorites.has(s.current.id)?s.favorites.delete(s.current.id):s.favorites.add(s.current.id);save();player();render()});
+$("playPause").addEventListener("click",()=>{if(!s.current)return toast("Сначала выбери трек");if(audio.paused)audio.play().then(player);else audio.pause();player()});$("nextTrack").addEventListener("click",next);
+audio.addEventListener("ended",next);audio.addEventListener("play",player);audio.addEventListener("pause",player);audio.addEventListener("timeupdate",()=>{if(audio.duration)$("seek").value=audio.currentTime/audio.duration*100});$("seek").addEventListener("input",()=>{if(audio.duration)audio.currentTime=audio.duration*+$("seek").value/100});
+$("profileBtn").addEventListener("click",()=>{let id=prompt("Jamendo Client ID (получи на devportal.jamendo.com):",s.client);if(id?.trim()){s.client=id.trim();localStorage.setItem("rw-jamendo-client-id",s.client);search("electronic")}});
+if(window.Telegram?.WebApp){Telegram.WebApp.ready();Telegram.WebApp.expand()}playlists();search("electronic");
+})();
